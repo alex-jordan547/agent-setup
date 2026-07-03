@@ -61,7 +61,9 @@ Append one line to `~/.cache/agent-health/<repo-basename>.jsonl`
 (create the directory if needed):
 
 ```json
-{"ts":"<ISO date>","branch":"<git branch>","score":7.8,"categories":{"test":9,"typecheck":8,"lint":6,"deadcode":7}}
+{"ts":"<ISO date>","branch":"<git branch>","score":7.8,
+ "categories":{"test":{"score":10,"detail":"121/121 pass"},"typecheck":{"score":4,"detail":"12 errors"}},
+ "issues":["<top recommendation 1>","<top recommendation 2>","<top recommendation 3>"]}
 ```
 
 If previous entries exist, compare against the last run and show the delta
@@ -88,3 +90,17 @@ Top issues to fix first:
 
 Close with the 3 highest-impact recommendations (ranked by score impact per
 effort), each pointing at concrete files. Then stop — no fixes.
+
+## Step 6 — HTML dashboard
+
+Render the visual dashboard from the history file:
+
+```bash
+node <this skill's dir>/scripts/render-dashboard.mjs <repo-basename>
+# writes ~/.cache/agent-health/<repo-basename>.html and prints the path
+```
+
+Self-contained HTML (no dependencies): composite score with delta, SVG trend
+line across all runs, per-category bars with deltas, and the last run's top
+issues. Open it in the browser, or publish it as an artifact when running
+inside a Claude session.
