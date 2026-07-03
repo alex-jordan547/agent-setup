@@ -33,8 +33,10 @@ Show the detected list to the user and offer to persist it as a
 ## Step 2 — Run the tools
 
 Run each tool sequentially. For each one capture: exit code, duration, and the
-last 50 lines of output. A tool that is configured but not installed is
-reported as `SKIPPED (reason)`, never as a failure.
+last 50 lines of output. npm-ecosystem tools that are not installed locally are
+run via `npx -y <tool>` — never skip them for being absent. Only report
+`SKIPPED (reason)` for tools outside the npm ecosystem (e.g. shellcheck,
+ruff) when they are genuinely unavailable, never as a failure.
 
 ## Step 3 — Score
 
