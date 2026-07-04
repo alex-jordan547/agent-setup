@@ -78,23 +78,43 @@ sync_skills() {
   fi
 }
 
+# sync_memory <src_file> <dest_file>
+# Copies a global memory file (CLAUDE.md / AGENTS.md) into place. Backs up an
+# existing, differing target to <dest>.bak-<timestamp> before overwriting.
+sync_memory() {
+  local src="$1" dest="$2"
+  [ -f "$src" ] || { echo "  !! missing in repo: $src" >&2; return; }
+  echo "-> $dest"
+  run mkdir -p "$(dirname "$dest")"
+  if [ -f "$dest" ] && ! cmp -s "$src" "$dest"; then
+    local backup="$dest.bak-$(date +%Y%m%d-%H%M%S)"
+    echo "  backup: $backup"
+    run cp -p "$dest" "$backup"
+  fi
+  run cp "$src" "$dest"
+}
+
 # bash 3.2 compatible (macOS default shell has no mapfile; BSD find has no -printf)
 ALL_SKILLS=()
 while IFS= read -r d; do
   ALL_SKILLS+=("$(basename "$d")")
 done < <(find "$SKILLS_DIR" -mindepth 1 -maxdepth 1 -type d | sort)
-read -r -a CODEX_SET <<< "$CODEX_SKILLS"
 
 echo "agent-setup sync ($([ "$DRY_RUN" = 1 ] && echo dry-run || echo live), ${#ALL_SKILLS[@]} skills)"
 
+# All skills live in the cross-tool standard dir; non-Claude agents read them there.
 sync_skills "$HOME/.agents/skills" "${ALL_SKILLS[@]}"
-sync_skills "$HOME/.codex/skills" "${CODEX_SET[@]}"
+
+# Global user memory: repo root is the source of truth (backed up before overwrite).
+sync_memory "$REPO_ROOT/CLAUDE.md" "$HOME/.claude/CLAUDE.md"
+sync_memory "$REPO_ROOT/AGENTS.md" "$HOME/.agents/AGENTS.md"
 
 if is_wsl; then
   WIN_HOME="/mnt/c/Users/$WINDOWS_USER"
   if [ -d "$WIN_HOME" ]; then
     sync_skills "$WIN_HOME/.agents/skills" "${ALL_SKILLS[@]}"
-    sync_skills "$WIN_HOME/.codex/skills" "${CODEX_SET[@]}"
+    sync_memory "$REPO_ROOT/CLAUDE.md" "$WIN_HOME/.claude/CLAUDE.md"
+    sync_memory "$REPO_ROOT/AGENTS.md" "$WIN_HOME/.agents/AGENTS.md"
   else
     echo "!! WSL detected but $WIN_HOME not found — check WINDOWS_USER in config.env" >&2
   fi

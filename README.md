@@ -9,18 +9,27 @@ Créé après avoir perdu des skills lors d'un remplacement de distro WSL (2026-
 | Chemin | Rôle |
 |---|---|
 | `skills/` | toutes les skills (une par dossier, `SKILL.md` + assets) |
-| `config.env` | `WINDOWS_USER` + `CODEX_SKILLS` (le sous-ensemble copié dans `.codex/skills`) |
+| `CLAUDE.md` | mémoire globale Claude Code (source de vérité, synced vers `~/.claude/CLAUDE.md`) |
+| `AGENTS.md` | mémoire globale des autres agents (synced vers `~/.agents/AGENTS.md`) |
+| `config.env` | `WINDOWS_USER` |
 | `scripts/sync.sh` | sync Linux / WSL / macOS (bash 3.2 compatible) |
 | `scripts/sync.ps1` | sync Windows natif (PowerShell + robocopy) |
 | `shell/env.sh` | exports d'environnement (ex. `CDP_PORT_FILE` pour chrome-cdp sous WSL) |
 
 ## Destinations
 
-- `~/.agents/skills` : **toutes** les skills (répertoire standard cross-outils)
-- `~/.codex/skills` : uniquement `CODEX_SKILLS`
-- Sous WSL, les deux mêmes répertoires côté Windows (`/mnt/c/Users/$WINDOWS_USER/…`) sont aussi synchronisés — pas besoin de lancer `sync.ps1` si le WSL tourne.
+Skills :
 
-Chaque destination reçoit un manifeste `.agent-setup-managed` : seules les entrées listées dedans peuvent être supprimées (prune). Les skills installées par d'autres outils (gstack, `npx skills`, …) ne sont jamais touchées.
+- `~/.agents/skills` : **toutes** les skills (répertoire standard cross-outils, lu par tous les agents non-Claude)
+- Chaque destination reçoit un manifeste `.agent-setup-managed` : seules les entrées listées dedans peuvent être supprimées (prune). Les skills installées par d'autres outils (gstack, `npx skills`, …) ne sont jamais touchées.
+
+Mémoire globale (repo = source de vérité) :
+
+- `CLAUDE.md` → `~/.claude/CLAUDE.md`
+- `AGENTS.md` → `~/.agents/AGENTS.md`
+- Avant tout écrasement, l'ancien fichier cible est sauvegardé en `<chemin>.bak-<AAAAMMJJ-HHMMSS>` (uniquement s'il diffère). Pas de backup pour les skills.
+
+Sous WSL, les mêmes destinations côté Windows (`/mnt/c/Users/$WINDOWS_USER/…`) sont aussi synchronisées — pas besoin de lancer `sync.ps1` si le WSL tourne.
 
 ## Usage
 
@@ -50,7 +59,7 @@ echo 'source ~/Documents/Developper/agent-setup/shell/env.sh' >> ~/.zshrc
 2. `./scripts/sync.sh`
 3. `git add -A && git commit && git push`
 
-Ne jamais éditer directement dans `~/.agents/skills` ou `~/.codex/skills` : le prochain sync écrase (rsync `--delete` / robocopy `/MIR`).
+Ne jamais éditer directement dans `~/.agents/skills`, `~/.claude/CLAUDE.md` ou `~/.agents/AGENTS.md` : le prochain sync écrase (rsync `--delete` / robocopy `/MIR` ; les fichiers mémoire sont sauvegardés avant écrasement).
 
 ## Notes
 

@@ -7,7 +7,7 @@ description: "Coordinate complex work across worker threads (Codex) or backgroun
 
 Use this skill when the user wants the main Codex App thread to coordinate work across other Codex threads. The orchestrator owns context, decisions, integration, and final judgment. Worker threads do research, implementation slices, verification, or review.
 
-Read `/mnt/c/Users/Alex Jordan/agent-guards/AGENTS.md` before starting.
+Read `~/.agents/AGENTS.md` before starting.
 
 ## Core Rule
 
