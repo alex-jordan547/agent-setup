@@ -1,9 +1,9 @@
 ---
-name: orchestrator
-description: "Coordinate complex work across worker threads (Codex) or background subagents (Claude). Keep the main thread as orchestrator: clarify, delegate, supervise to completion, review outputs, iterate, verify, and ship without doing substantial implementation directly."
+name: thread-orchestrator
+description: "Orchestrate work across threads: keep the main thread as coordinator that spawns and supervises worker threads (Codex) or background subagents (Claude) — clarify, delegate, supervise to completion, review outputs, iterate, verify, and ship without doing substantial implementation directly."
 ---
 
-# Orchestrator
+# Thread Orchestrator
 
 Use this skill when the user wants the main Codex App thread to coordinate work across other Codex threads. The orchestrator owns context, decisions, integration, and final judgment. Worker threads do research, implementation slices, verification, or review.
 
