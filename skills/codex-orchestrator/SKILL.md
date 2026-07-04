@@ -10,9 +10,20 @@ delegation happens through **worker threads** (`create_thread`), each pinned to 
 **deliberately chosen model**. The orchestrator thinks and hands off; workers do
 the mechanical work.
 
-Full supervision protocol (heartbeats, waiting policy, review, confidence labels):
-`~/.agents/skills/thread-orchestrator/SKILL.md`. This skill adds **model routing by
-context window** and a **three-role structure** on top.
+Supervision essentials (formerly in thread-orchestrator, now inlined):
+
+- After spawning a worker, set up **heartbeat supervision** (`automation_update`,
+  ~3 min default) instead of keeping the turn open; workers don't push results back —
+  read their thread (`read_thread`, newest turn first, outputs omitted).
+- **Wait passively**: `inProgress` means working. Steer only on new context, a wrong
+  brief, a blocking question, a reported blocker, or a timeout with no progress.
+- **Worker output is evidence, not a final answer**: check every success criterion,
+  confirm claimed edits/tests, resolve conflicts centrally. Label confidence when
+  reporting: orchestrator-accepted / worker-reported / unverified.
+- Don't stop at "worker created"; don't convert orchestration into main-thread
+  implementation.
+
+This skill adds **model routing by context window** and a **three-role structure**.
 
 Delegation mechanism, in preference order:
 1. **Named agents** (`~/.codex/agents/*.toml` or project `.codex/agents/`) — spawn by
