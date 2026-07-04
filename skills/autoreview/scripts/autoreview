@@ -18,6 +18,13 @@ from typing import Any, Callable
 
 
 ENGINES = ("codex", "claude", "droid", "copilot")
+
+# Default Codex model/effort, used only when the user does not pass --model/--thinking.
+# Disabled for now (empty => inherit the Codex CLI config). Re-enable by setting a value
+# here or via env, e.g. AUTOREVIEW_CODEX_MODEL=gpt-5.3-codex-spark AUTOREVIEW_CODEX_THINKING=xhigh.
+CODEX_DEFAULT_MODEL = os.environ.get("AUTOREVIEW_CODEX_MODEL", "")
+CODEX_DEFAULT_THINKING = os.environ.get("AUTOREVIEW_CODEX_THINKING", "")
+
 THINKING_LEVELS_BY_ENGINE = {
     "codex": {"low", "medium", "high", "xhigh"},
     "claude": {"low", "medium", "high", "xhigh", "max"},
@@ -1096,6 +1103,9 @@ def reviewer_args(args: argparse.Namespace) -> list[argparse.Namespace]:
         seen.add(engine)
         model = inline_model or model_by_engine.get(engine) or global_model
         thinking = inline_thinking or thinking_by_engine.get(engine) or global_thinking
+        if engine == "codex":
+            model = model or CODEX_DEFAULT_MODEL
+            thinking = thinking or CODEX_DEFAULT_THINKING
         if thinking and thinking not in THINKING_LEVELS_BY_ENGINE[engine]:
             valid = ", ".join(sorted(THINKING_LEVELS_BY_ENGINE[engine])) or "none"
             raise SystemExit(f"invalid thinking level for {engine}: {thinking} (valid: {valid})")
