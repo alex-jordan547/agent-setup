@@ -46,7 +46,9 @@ an agent's model is fixed but task size varies — the orchestrator picks the va
 | `explorer_spark` | spark | read-only | Tight bounded explores (working set ≪ 128k) |
 | `explorer_mini` | 5.4-mini | read-only | Medium cheap sweeps (≪ 272k) |
 | `explorer_max` | 5.4 | read-only | Huge one-pass sweeps needing synthesis |
-| `editor_spark` | spark | workspace-write | The only writing hands: one surgical, pre-designed edit |
+| `editor_spark` | spark | workspace-write | Default editor: one surgical, pre-designed edit |
+| `editor_mini` | 5.4-mini | workspace-write | Bulk mechanical edits across many files (renames, propagation) |
+| `editor_max` | 5.4 high | workspace-write | Escalation editor: big non-splittable files, delegated judgment |
 | `verifier_spark` | spark | workspace-write | Runs the exact given checks; never fixes |
 | `reviewer` | 5.4 high | read-only | Correctness/security/regression review of a diff |
 | `oracle` | 5.5 xhigh | read-only | Gate judgments (see Oracle gates) |
