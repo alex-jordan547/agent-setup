@@ -1,94 +1,121 @@
 ---
 name: codex-orchestrator
-description: "Codex-only orchestrator that routes each delegated task to the cheapest/fastest model whose context window can hold it. The main thread does the research and prep, then spawns worker threads (create_thread with a per-worker model override) for bounded edits, explores, and verifications — writing almost no code itself. Optimizes for best result, lowest latency, fewest tokens."
+description: "Codex-only orchestrator with three roles: 5.5 as oracle (plans and validates with its own tools), 5.4 as the orchestrator (coordinates, holds the plan, spawns workers), and spark/mini as the hands (bounded edits, explores, verifications). Routes each task to the cheapest/fastest model whose context window can hold it. The orchestrator writes almost no code; it delegates pre-digested slices. Optimizes for best result, lowest latency, fewest tokens."
 ---
 
 # Codex Orchestrator
 
-A model-aware orchestrator for the Codex App. Same main thread as coordinator;
-delegation happens through **worker threads** (`create_thread`) each pinned to a
-**deliberately chosen model**. The orchestrator does the thinking and hand-off
-prep; workers do the mechanical work.
+A model-aware orchestrator for the Codex App. The main thread coordinates;
+delegation happens through **worker threads** (`create_thread`), each pinned to a
+**deliberately chosen model**. The orchestrator thinks and hands off; workers do
+the mechanical work.
 
-For the full supervision protocol (heartbeats, waiting policy, review, confidence
-labels) see `~/.agents/skills/thread-orchestrator/SKILL.md`. This skill adds one
-thing on top: **which model to send, sized to its context window.**
+Full supervision protocol (heartbeats, waiting policy, review, confidence labels):
+`~/.agents/skills/thread-orchestrator/SKILL.md`. This skill adds **model routing by
+context window** and a **three-role structure** on top.
 
-## Core rule
-
-The orchestrator writes almost no code. For anything non-trivial it does the
-research, reads the code, decides the exact change, then spawns workers to apply
-narrow, pre-digested slices. A worker should receive a task it can finish inside
-its context window in one pass — never a vague "figure this out and fix it".
-
-Delegation mechanism: `create_thread` with `model` + `thinking` overrides. The
-native in-turn subagents (`multi_agent_v2`) are disabled here (HTTP 400,
+Delegation mechanism: `create_thread` with `model` + `thinking` overrides. Native
+in-turn subagents (`multi_agent_v2`) are disabled here (HTTP 400,
 openai/codex#26753) — do not rely on them; use worker threads.
+
+## Three roles
+
+| Role | Model | Job |
+|---|---|---|
+| **Oracle** | `gpt-5.5` | Plans (with the user) and validates at gates. Investigates **with its own tools** — reads the real files, runs checks first-hand. Never spoon-fed a lossy summary. |
+| **Orchestrator** | `gpt-5.4` | Holds the plan, coordinates, spawns and supervises workers, integrates. Its 1M window is **headroom**, not a warehouse — the plan pre-digests the work so it stays far from full. |
+| **Hands** | `gpt-5.3-codex-spark` / `gpt-5.4-mini` | Bounded edits, tight explores, verifications. One precise task each, sized to fit their window in one pass. |
+
+The orchestrator writes almost no code. It does prep, then delegates narrow,
+pre-located slices.
+
+> Reality check: `gpt-5.4`'s 1M window is advertised in the model cache, not yet
+> confirmed on this account. If real runs cap at 272k, the orchestrator loses its
+> window edge over 5.5 — verify before depending on it.
+
+## Two modes + the tripwire
+
+**Planned mode (big tasks).** A plan built by the user + oracle (`gpt-5.5`) has
+already cartographed the work: the surface, the slices, the dependencies, the
+verification steps. The orchestrator inherits this and never discovers the surface
+live. **Big tasks require a plan** — this is the precondition that keeps the
+orchestrator's window as headroom.
+
+**Unplanned mode (small tasks only).** No plan: the orchestrator cartographs the
+surface itself, paying context. Allowed **only** when the task is genuinely small.
+
+**Context tripwire (mandatory).** Humans misjudge task size — a "small" fix can
+touch 40 files. So in unplanned mode the orchestrator watches its own fill: if
+exploration passes **~50% of its window** before a plan exists, it **stops and
+demands a plan** instead of plowing into compaction. The no-plan contract is
+enforced by this tripwire, not merely hoped for.
+
+## Oracle gates
+
+Call the oracle (`gpt-5.5`, own tools) at **deterministic gates**, plus orchestrator
+discretion on top — never discretion alone.
+
+Deterministic gates:
+- **Primary: before validating the work / before review / autoreview** — ask the
+  oracle whether what's been built is coherent end-to-end. This is the load-bearing
+  gate.
+- After a plan is produced, before spawning workers against it — sanity-check the
+  map (a wrong plan executed perfectly by five sparks is garbage at speed).
+- When two workers' results conflict.
+- Before a wide or irreversible change.
+
+Discretion: the orchestrator (intel 4/5) may also call the oracle when it senses
+it's out of its depth — additive to the gates, for the unknown-unknowns the fixed
+triggers didn't anticipate.
+
+Cost discipline: each oracle call is a full 5.5 investigation — expensive and slow.
+Don't gate every micro-step; reserve gates for coherence, plan sanity, conflicts,
+and irreversibility.
 
 ## Model table
 
-Scores 1–5 (5 = best on that axis). Context is the hard constraint; the rest are
-preferences. Numbers are grounded in the Codex model list; scores are a starting
-calibration — tune from real runs.
+Scores 1–5 (5 = best). Context is the hard constraint; the rest are preferences.
+Numbers grounded in the Codex model list; scores are a starting calibration — tune
+from real runs.
 
 | Model | Intelligence | Speed | Context (ctx / max) | Token economy | Best for |
 |---|---|---|---|---|---|
 | `gpt-5.3-codex-spark` | 3 | **5** | 128k / 128k | 4 | Surgical edits, tight bounded explores, quick verifications |
 | `gpt-5.4-mini` | 2 | 4 | 272k / 272k | **5** | Cheap bulk work, medium explorations, simple mechanical tasks |
-| `gpt-5.4` | 4 | 3 | 272k / **1M** | 3 | Large-context work needing real intelligence (huge explore + synthesis, big refactor read) |
-| `gpt-5.5` | **5** | 3 | 272k / 272k | 2 | Hard reasoning, architecture, tricky diagnosis, ambiguous synthesis (or keep on the orchestrator itself) |
+| `gpt-5.4` | 4 | 3 | 272k / **1M** | 3 | Orchestrator role; large-context work needing real intelligence |
+| `gpt-5.5` | **5** | 3 | 272k / 272k | 2 | Oracle role; hard reasoning, architecture, tricky diagnosis |
 
 `codex-auto-review` is a review-only model — not a delegation target.
 
 ## Context budgeting (the routing constraint)
 
 Estimate the task's working set: files the worker must read + instructions +
-expected output. Route to a model whose **effective window (~95% of max)** holds
-that with headroom.
+expected output. Route to a model whose **effective window (~95% of max)** holds it
+with headroom.
 
-- Target **< 60%** window utilization for the whole task. Above that, mid-task
-  auto-compaction kicks in — the worker loses state, re-reads, and burns tokens
-  and time. This is exactly the spark failure mode: a 128k model handed a task
-  that needs 150k of reads compacts repeatedly and gets slow and dumb.
-- If a task exceeds a model's budget, do one of: **(a) shrink it** (the
-  orchestrator reads/greps first and passes only the relevant slice), **(b) split
-  it** into several bounded workers, or **(c) escalate** to a bigger-context model.
-- Prefer (a)/(b) with `spark`/`mini` over (c). Splitting a big job into five
-  precise spark edits is usually faster and cheaper than one `gpt-5.4` pass — and
-  the orchestrator already did the reading.
+- Target **< 60%** window utilization per task. Above that, mid-task auto-compaction
+  kicks in — the worker loses state, re-reads, burns tokens and time. That's the
+  spark failure mode: a 128k model handed a 150k task compacts repeatedly and gets
+  slow and dumb.
+- If a task exceeds a model's budget: **(a) shrink it** (orchestrator greps/reads
+  first, passes only the relevant slice), **(b) split it** into bounded workers, or
+  **(c) escalate** to a bigger-context model. Prefer (a)/(b) with spark/mini over
+  (c): five precise spark edits usually beat one 5.4 pass — the orchestrator already
+  did the reading.
 
 ## Routing decision
 
-1. **Does it need real reasoning** (design, ambiguous tradeoff, root-causing a
-   subtle bug)? → do it on the orchestrator, or delegate to `gpt-5.5`. Never send
-   genuine reasoning to `mini`.
-2. **Is it a precise, well-specified edit or a narrow check**, and does its
-   working set fit **< ~90k**? → `gpt-5.3-codex-spark`. This is the default
-   workhorse for applying changes the orchestrator already designed.
-3. **Is it a broad, low-reasoning sweep** (read many files, list usages, gather
-   evidence) that fits in 272k? → `gpt-5.4-mini` (cheapest) — or `spark` if it's
-   tight and speed matters.
-4. **Does it genuinely need a huge context window** (a working set only 1M can
-   hold) **and** some intelligence? → `gpt-5.4`. Use sparingly; it's the
-   escalation, not the default.
+1. **Needs real reasoning** (design, ambiguous tradeoff, subtle root-cause)? → the
+   oracle, or keep it on the orchestrator. Never send genuine reasoning to `mini`.
+2. **Precise, well-specified edit or narrow check**, working set **< ~90k**? →
+   `gpt-5.3-codex-spark`. The default workhorse for changes already designed.
+3. **Broad, low-reasoning sweep** (read many files, list usages, gather evidence)
+   fitting in 272k? → `gpt-5.4-mini` (cheapest), or `spark` if tight and speed matters.
+4. **Genuinely needs a huge window** (working set only 1M holds) **and** intelligence?
+   → `gpt-5.4`. The escalation, not the default.
 
-Tie-break order: **cheapest and fastest model that clears the context bar wins.**
-Only climb the intelligence axis when the task actually needs it.
-
-## Complex-task pattern
-
-When the task is hard, the orchestrator front-loads the work so workers stay cheap:
-
-1. Do all the research itself: read the code, grep the surface, reproduce the bug,
-   decide the exact diffs and the verification steps.
-2. Split the change into narrow, independent slices.
-3. Spawn several `spark` workers in parallel — one per slice — each with the exact
-   files, the exact edit, and a concrete success check. Small enough to never
-   compact.
-4. Optionally spawn a `mini`/`spark` worker to verify (run tests, re-read, confirm)
-   rather than trusting worker self-reports.
-5. Integrate, judge, iterate. Escalate a slice to `gpt-5.5`/`gpt-5.4` only if a
-   worker stalls or the slice turns out to need reasoning.
+Tie-break: **cheapest and fastest model that clears the context bar wins.** Climb
+the intelligence axis only when the task actually needs it.
 
 ## Worker prompt (model-scoped)
 
@@ -96,7 +123,7 @@ Give every worker its files, its edit, its check — never open-ended discovery 
 small model.
 
 ```text
-Model: <chosen slug + reasoning>. Chosen because: <ctx fit / speed / cost>.
+Model: <slug + reasoning>. Chosen because: <ctx fit / speed / cost>.
 Working set (already located by orchestrator): <exact files/paths/line ranges>.
 Task: <one precise edit or check>.
 Do NOT: read beyond the working set, refactor adjacent code, or expand scope.
@@ -106,10 +133,10 @@ Return: files changed, check result, anything that didn't fit — do not keep go
 
 ## Token/latency economy
 
-- Reading is the orchestrator's job; workers should almost never explore from
-  scratch on a big model. Pre-fetched context = smaller, cheaper, faster workers.
+- Reading is the orchestrator's job; workers almost never explore from scratch on a
+  big model. Pre-fetched context = smaller, cheaper, faster workers.
 - Parallelize independent spark workers instead of one serial big-model pass.
 - Match reasoning effort to the task: `low`/`medium` for mechanical edits, reserve
   `high`/`xhigh` for the genuinely hard slice.
 - Every escalation to `gpt-5.4`/`gpt-5.5` should have a reason you could state out
-  loud. If you can't, a split of `spark`/`mini` workers is the cheaper answer.
+  loud. If you can't, a split of spark/mini workers is the cheaper answer.
