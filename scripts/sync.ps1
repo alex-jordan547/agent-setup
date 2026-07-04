@@ -53,6 +53,37 @@ function Sync-Skills([string]$Dest, [string[]]$Names) {
     }
 }
 
+function Sync-Agents([string]$Dest) {
+    $srcDir = Join-Path $RepoRoot "agents"
+    if (-not (Test-Path $srcDir)) { return }
+    Write-Host "-> $Dest"
+    if (-not $DryRun) { New-Item -ItemType Directory -Force -Path $Dest | Out-Null }
+
+    $names = Get-ChildItem -Path $srcDir -Filter *.toml | Select-Object -ExpandProperty Name
+    foreach ($name in $names) {
+        if (-not $DryRun) { Copy-Item (Join-Path $srcDir $name) (Join-Path $Dest $name) -Force }
+    }
+
+    $manifest = Join-Path $Dest $ManifestName
+    if (-not $NoPrune -and (Test-Path $manifest)) {
+        foreach ($old in Get-Content $manifest | Where-Object { $_ }) {
+            if ($names -notcontains $old) {
+                $stale = Join-Path $Dest $old
+                if (Test-Path $stale) {
+                    Write-Host "  prune: $old"
+                    if (-not $DryRun) { Remove-Item -Force $stale }
+                }
+            }
+        }
+    }
+
+    if ($DryRun) {
+        Write-Host "  [dry-run] write manifest $manifest"
+    } else {
+        $names | Set-Content $manifest
+    }
+}
+
 function Sync-Memory([string]$Src, [string]$Dest) {
     if (-not (Test-Path $Src)) { Write-Warning "missing in repo: $Src"; return }
     Write-Host "-> $Dest"
@@ -72,6 +103,9 @@ Write-Host "agent-setup sync ($mode, $($AllSkills.Count) skills)"
 
 # All skills live in the cross-tool standard dir; non-Claude agents read them there.
 Sync-Skills (Join-Path $env:USERPROFILE ".agents\skills") $AllSkills
+
+# Codex custom subagents: agents/*.toml -> %USERPROFILE%\.codex\agents (personal scope).
+Sync-Agents (Join-Path $env:USERPROFILE ".codex\agents")
 
 # Global user memory: repo root is the source of truth (backed up before overwrite).
 Sync-Memory (Join-Path $RepoRoot "CLAUDE.md") (Join-Path $env:USERPROFILE ".claude\CLAUDE.md")

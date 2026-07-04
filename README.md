@@ -9,6 +9,7 @@ Créé après avoir perdu des skills lors d'un remplacement de distro WSL (2026-
 | Chemin | Rôle |
 |---|---|
 | `skills/` | toutes les skills (une par dossier, `SKILL.md` + assets) |
+| `agents/` | subagents Codex custom (`*.toml`, synced vers `~/.codex/agents`) |
 | `CLAUDE.md` | mémoire globale Claude Code (source de vérité, synced vers `~/.claude/CLAUDE.md`) |
 | `AGENTS.md` | mémoire globale des autres agents (synced vers `~/.agents/AGENTS.md`) |
 | `config.env` | `WINDOWS_USER` |
@@ -21,7 +22,8 @@ Créé après avoir perdu des skills lors d'un remplacement de distro WSL (2026-
 Skills :
 
 - `~/.agents/skills` : **toutes** les skills (répertoire standard cross-outils, lu par tous les agents non-Claude)
-- Chaque destination reçoit un manifeste `.agent-setup-managed` : seules les entrées listées dedans peuvent être supprimées (prune). Les skills installées par d'autres outils (gstack, `npx skills`, …) ne sont jamais touchées.
+- `~/.codex/agents` : les subagents Codex (`agents/*.toml`)
+- Chaque destination reçoit un manifeste `.agent-setup-managed` : seules les entrées listées dedans peuvent être supprimées (prune). Les skills/agents installés par d'autres outils ne sont jamais touchés.
 
 Mémoire globale (repo = source de vérité) :
 

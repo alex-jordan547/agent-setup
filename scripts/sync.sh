@@ -78,6 +78,45 @@ sync_skills() {
   fi
 }
 
+# sync_agents <dest_dir>
+# Copies repo agents/*.toml (Codex custom subagents) into place. Manifest-based
+# prune like skills: only files this script installed are ever removed.
+sync_agents() {
+  local dest="$1"
+  local src_dir="$REPO_ROOT/agents"
+  [ -d "$src_dir" ] || return 0
+  echo "-> $dest"
+  run mkdir -p "$dest"
+
+  local names=()
+  local f
+  for f in "$src_dir"/*.toml; do
+    [ -f "$f" ] || continue
+    names+=("$(basename "$f")")
+    run cp "$f" "$dest/$(basename "$f")"
+  done
+
+  local manifest="$dest/$MANIFEST_NAME"
+  if [ "$PRUNE" = 1 ] && [ -f "$manifest" ]; then
+    while IFS= read -r old; do
+      [ -n "$old" ] || continue
+      local still=0
+      local name
+      for name in "${names[@]}"; do [ "$name" = "$old" ] && still=1 && break; done
+      if [ "$still" = 0 ] && [ -f "$dest/$old" ]; then
+        echo "  prune: $old"
+        run rm -f "$dest/$old"
+      fi
+    done < "$manifest"
+  fi
+
+  if [ "$DRY_RUN" = 1 ]; then
+    echo "  [dry-run] write manifest $manifest"
+  else
+    printf '%s\n' "${names[@]}" > "$manifest"
+  fi
+}
+
 # sync_memory <src_file> <dest_file>
 # Copies a global memory file (CLAUDE.md / AGENTS.md) into place. Backs up an
 # existing, differing target to <dest>.bak-<timestamp> before overwriting.
@@ -105,6 +144,9 @@ echo "agent-setup sync ($([ "$DRY_RUN" = 1 ] && echo dry-run || echo live), ${#A
 # All skills live in the cross-tool standard dir; non-Claude agents read them there.
 sync_skills "$HOME/.agents/skills" "${ALL_SKILLS[@]}"
 
+# Codex custom subagents: agents/*.toml -> ~/.codex/agents (personal/global scope).
+sync_agents "$HOME/.codex/agents"
+
 # Global user memory: repo root is the source of truth (backed up before overwrite).
 sync_memory "$REPO_ROOT/CLAUDE.md" "$HOME/.claude/CLAUDE.md"
 sync_memory "$REPO_ROOT/AGENTS.md" "$HOME/.agents/AGENTS.md"
@@ -113,6 +155,7 @@ if is_wsl; then
   WIN_HOME="/mnt/c/Users/$WINDOWS_USER"
   if [ -d "$WIN_HOME" ]; then
     sync_skills "$WIN_HOME/.agents/skills" "${ALL_SKILLS[@]}"
+    sync_agents "$WIN_HOME/.codex/agents"
     sync_memory "$REPO_ROOT/CLAUDE.md" "$WIN_HOME/.claude/CLAUDE.md"
     sync_memory "$REPO_ROOT/AGENTS.md" "$WIN_HOME/.agents/AGENTS.md"
   else

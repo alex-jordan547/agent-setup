@@ -14,9 +14,16 @@ Full supervision protocol (heartbeats, waiting policy, review, confidence labels
 `~/.agents/skills/thread-orchestrator/SKILL.md`. This skill adds **model routing by
 context window** and a **three-role structure** on top.
 
-Delegation mechanism: `create_thread` with `model` + `thinking` overrides. Native
-in-turn subagents (`multi_agent_v2`) are disabled here (HTTP 400,
-openai/codex#26753) — do not rely on them; use worker threads.
+Delegation mechanism, in preference order:
+1. **Named agents** (`~/.codex/agents/*.toml` or project `.codex/agents/`) — spawn by
+   name; each is pinned to the right model with scope rules and stop conditions baked
+   into its `developer_instructions`.
+2. **Fallback** when the named agents aren't defined in the environment: worker threads
+   via `create_thread` with `model` + `thinking` overrides, embedding the same scope
+   rules in the worker prompt.
+
+Native in-turn `multi_agent_v2` is disabled here (HTTP 400, openai/codex#26753) — do
+not rely on it.
 
 ## Three roles
 
@@ -28,6 +35,41 @@ openai/codex#26753) — do not rely on them; use worker threads.
 
 The orchestrator writes almost no code. It does prep, then delegates narrow,
 pre-located slices.
+
+## Named agent roster
+
+Defined in `agents/*.toml` (synced to `~/.codex/agents/`). Sized variants exist because
+an agent's model is fixed but task size varies — the orchestrator picks the variant.
+
+| Agent | Model | Sandbox | Use |
+|---|---|---|---|
+| `explorer_spark` | spark | read-only | Tight bounded explores (working set ≪ 128k) |
+| `explorer_mini` | 5.4-mini | read-only | Medium cheap sweeps (≪ 272k) |
+| `explorer_max` | 5.4 | read-only | Huge one-pass sweeps needing synthesis |
+| `editor_spark` | spark | workspace-write | The only writing hands: one surgical, pre-designed edit |
+| `verifier_spark` | spark | workspace-write | Runs the exact given checks; never fixes |
+| `reviewer` | 5.4 high | read-only | Correctness/security/regression review of a diff |
+| `oracle` | 5.5 xhigh | read-only | Gate judgments (see Oracle gates) |
+
+**Pre-flight measurement (mandatory before picking a variant).** Size is a measurement,
+not a judgment — never pick by instinct:
+
+```bash
+rg --files <zone> | wc -l                   # file count
+rg --files <zone> | xargs wc -l | tail -1   # total lines
+rg -l "<symbol>" | wc -l                    # fan-out
+```
+
+Rough budget: `lines × ~10 tokens/line` vs the variant's window, target < 60%. Fits
+under ~90k → spark variant; under ~160k → mini; bigger → split into N fitting slices
+(preferred) or escalate to `explorer_max`.
+
+**Return contract (the downstream tripwire).** Small-model agents are briefed to stop
+and hand back instead of compacting silently: `out_of_scope` (needs files beyond the
+working set), `too_big` (a listed file is far larger than briefed), `mismatch`
+(editor: real code differs from the brief). On any of these, the orchestrator
+re-measures and re-routes — split or escalate. Never re-send the same oversized task
+to the same variant.
 
 > Reality check: `gpt-5.4`'s 1M window is advertised in the model cache, not yet
 > confirmed on this account. If real runs cap at 272k, the orchestrator loses its
