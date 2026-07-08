@@ -1,37 +1,33 @@
 ---
 name: codex-orchestrator
-description: "Codex-only orchestrator with three roles: 5.5 as oracle (plans and validates with its own tools), 5.4 as the orchestrator (coordinates, holds the plan, spawns workers), and spark/mini as the hands (bounded edits, explores, verifications). Routes each task to the cheapest/fastest model whose context window can hold it. The orchestrator writes almost no code; it delegates pre-digested slices. Optimizes for best result, lowest latency, fewest tokens."
+description: "Codex-only orchestrator with three roles: 5.5 as oracle (plans and validates with its own tools), 5.4 as the orchestrator (coordinates, holds the plan, spawns workers), and spark/mini as the hands (bounded edits, explores, verifications). Routes each task to the cheapest/fastest model whose context window can hold it. The orchestrator never writes code; it delegates pre-digested slices to workers. Optimizes for best result, lowest latency, fewest tokens."
 ---
 
 # Codex Orchestrator
 
-A model-aware orchestrator for the Codex App. The main thread coordinates;
-delegation happens through **worker threads** (`create_thread`), each pinned to a
+A model-aware orchestrator for the Codex App. The orchestrator coordinates;
+delegation happens through **named agents**, each pinned to a
 **deliberately chosen model**. The orchestrator thinks and hands off; workers do
 the mechanical work.
 
-Supervision essentials (formerly in thread-orchestrator, now inlined):
+Supervision essentials:
 
 - After spawning a worker, set up **heartbeat supervision** (`automation_update`,
   ~3 min default) instead of keeping the turn open; workers don't push results back —
-  read their thread (`read_thread`, newest turn first, outputs omitted).
+  poll their output.
 - **Wait passively**: `inProgress` means working. Steer only on new context, a wrong
   brief, a blocking question, a reported blocker, or a timeout with no progress.
 - **Worker output is evidence, not a final answer**: check every success criterion,
   confirm claimed edits/tests, resolve conflicts centrally. Label confidence when
   reporting: orchestrator-accepted / worker-reported / unverified.
-- Don't stop at "worker created"; don't convert orchestration into main-thread
-  implementation.
+- Don't stop at "worker created"; don't convert orchestration into implementation
+  by the orchestrator itself.
 
 This skill adds **model routing by context window** and a **three-role structure**.
 
-Delegation mechanism, in preference order:
-1. **Named agents** (`~/.codex/agents/*.toml` or project `.codex/agents/`) — spawn by
-   name; each is pinned to the right model with scope rules and stop conditions baked
-   into its `developer_instructions`.
-2. **Fallback** when the named agents aren't defined in the environment: worker threads
-   via `create_thread` with `model` + `thinking` overrides, embedding the same scope
-   rules in the worker prompt.
+Delegation mechanism: **named agents** (`~/.codex/agents/*.toml` or project
+`.codex/agents/`) — spawn by name; each is pinned to the right model with scope rules
+and stop conditions baked into its `developer_instructions`.
 
 Native in-turn `multi_agent_v2` is disabled here (HTTP 400, openai/codex#26753) — do
 not rely on it.
@@ -44,8 +40,19 @@ not rely on it.
 | **Orchestrator** | `gpt-5.4` | Holds the plan, coordinates, spawns and supervises workers, integrates. Its 1M window is **headroom**, not a warehouse — the plan pre-digests the work so it stays far from full. |
 | **Hands** | `gpt-5.3-codex-spark` / `gpt-5.4-mini` | Bounded edits, tight explores, verifications. One precise task each, sized to fit their window in one pass. |
 
-The orchestrator writes almost no code. It does prep, then delegates narrow,
-pre-located slices.
+**Hard rule — the orchestrator does not write code.** It does prep (grep, read,
+measure, slice), then delegates narrow, pre-located slices. Every file edit goes
+through a worker, no exceptions:
+
+- **Never** `apply_patch` / edit / write a file from the orchestrator role — not
+  even a "trivial" one-liner. Trivial edits are exactly what `editor_spark` is for.
+- If the task involves any code change and **zero workers have been spawned**, the
+  orchestration has already failed — stop, slice the work, spawn.
+- The urge to "just do it myself, it's faster" is the failure mode this skill
+  exists to prevent. Speed comes from parallel workers, not from the orchestrator
+  typing.
+- Self-check before ending any turn: *did I edit a file this turn?* If yes, that
+  edit was a violation — route the remaining work through workers and say so.
 
 ## Named agent roster
 
@@ -61,28 +68,37 @@ an agent's model is fixed but task size varies — the orchestrator picks the va
 | `editor_mini` | 5.4-mini | workspace-write | Bulk mechanical edits across many files (renames, propagation) |
 | `editor_max` | 5.4 high | workspace-write | Escalation editor: big non-splittable files, delegated judgment |
 | `verifier_spark` | spark | workspace-write | Runs the exact given checks; never fixes |
-| `reviewer` | 5.4 high | read-only | Correctness/security/regression review of a diff |
+| `reviewer` | 5.4 high | read-only | Correctness/security/regression review of the **final integrated diff** — one gate, not one per slice |
 | `oracle` | 5.5 xhigh | read-only | Gate judgments (see Oracle gates) |
 
-**Pre-flight measurement (mandatory before picking a variant).** Size is a measurement,
-not a judgment — never pick by instinct:
+**Pre-flight measurement (mandatory before picking a variant).** Measure the
+**working set** — the exact files the worker will read, i.e. the list that goes in
+its brief — never a whole zone or directory. Measuring a zone is the classic way to
+overestimate by 10× and send everything to the `_max` variants:
 
 ```bash
-rg --files <zone> | wc -l                   # file count
-rg --files <zone> | xargs wc -l | tail -1   # total lines
-rg -l "<symbol>" | wc -l                    # fan-out
+wc -l <file1> <file2> ...     # lines of the actual working set (the brief's file list)
+rg -l "<symbol>" | wc -l      # fan-out — to decide how to split, not to size the task
 ```
 
-Rough budget: `lines × ~10 tokens/line` vs the variant's window, target < 60%. Fits
-under ~90k → spark variant; under ~160k → mini; bigger → split into N fitting slices
-(preferred) or escalate to `explorer_max`.
+Budget: `lines × ~10 tokens/line` + brief + expected output, vs the variant's real
+window, target **< ~75%**. That is the only margin — do not stack extra safety
+factors on top of it. Fits in spark's 128k → spark; in mini's 272k → mini; bigger →
+split into N fitting slices. Escalating to a `_max` variant instead of splitting
+requires a stated one-line reason why the slice is not splittable.
+
+**When in doubt, go cheap.** A spark run that comes back `too_big` costs almost
+nothing; a `_max` run that wasn't needed costs a lot. Route on evidence — a
+measurement or a returned `too_big` — never on instinct.
 
 **Return contract (the downstream tripwire).** Small-model agents are briefed to stop
 and hand back instead of compacting silently: `out_of_scope` (needs files beyond the
 working set), `too_big` (a listed file is far larger than briefed), `mismatch`
 (editor: real code differs from the brief). On any of these, the orchestrator
-re-measures and re-routes — split or escalate. Never re-send the same oversized task
-to the same variant.
+re-measures and re-routes — **split first**; escalate only if the slice is genuinely
+not splittable. Never re-send the same oversized task to the same variant. These
+returns are the escalation mechanism: cheap probes, which is why routing defaults
+cheap instead of pre-emptively reaching for `_max`.
 
 > Reality check: `gpt-5.4`'s 1M window is advertised in the model cache, not yet
 > confirmed on this account. If real runs cap at 272k, the orchestrator loses its
@@ -125,7 +141,15 @@ triggers didn't anticipate.
 
 Cost discipline: each oracle call is a full 5.5 investigation — expensive and slow.
 Don't gate every micro-step; reserve gates for coherence, plan sanity, conflicts,
-and irreversibility.
+and irreversibility. Same for `reviewer` (5.4 high): one review of the integrated
+diff at the end, never one per worker or per slice.
+
+**Oracle budget: one call per task by default** — the primary end-gate. A second
+call (plan sanity) is justified only when the plan is wide, risky, or was built
+without the user. Conflicts and irreversibility checks are folded into the next
+scheduled gate whenever possible — batch every pending question into one call
+rather than firing them one by one. Never call the oracle in a loop: if a gate
+answer raises a new question, it waits for the next gate.
 
 ## Model table
 
@@ -145,13 +169,12 @@ from real runs.
 ## Context budgeting (the routing constraint)
 
 Estimate the task's working set: files the worker must read + instructions +
-expected output. Route to a model whose **effective window (~95% of max)** holds it
-with headroom.
+expected output. Route to a model whose window holds it at **< ~75% utilization** —
+one margin, applied once (no "effective window" discount stacked on top).
 
-- Target **< 60%** window utilization per task. Above that, mid-task auto-compaction
-  kicks in — the worker loses state, re-reads, burns tokens and time. That's the
-  spark failure mode: a 128k model handed a 150k task compacts repeatedly and gets
-  slow and dumb.
+- Above that, mid-task auto-compaction kicks in — the worker loses state, re-reads,
+  burns tokens and time. That's the spark failure mode: a 128k model handed a 150k
+  task compacts repeatedly and gets slow and dumb.
 - If a task exceeds a model's budget: **(a) shrink it** (orchestrator greps/reads
   first, passes only the relevant slice), **(b) split it** into bounded workers, or
   **(c) escalate** to a bigger-context model. Prefer (a)/(b) with spark/mini over
@@ -170,7 +193,10 @@ with headroom.
    → `gpt-5.4`. The escalation, not the default.
 
 Tie-break: **cheapest and fastest model that clears the context bar wins.** Climb
-the intelligence axis only when the task actually needs it.
+the intelligence axis only when the task actually needs it. When the measurement is
+ambiguous, route to the cheap variant and let the return contract (`too_big`)
+trigger the escalation — a failed spark probe is cheaper than a needless 5.4 pass.
+Every route to a `_max` variant carries a stated one-line reason.
 
 ## Worker prompt (model-scoped)
 

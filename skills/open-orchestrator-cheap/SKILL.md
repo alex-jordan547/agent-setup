@@ -1,6 +1,6 @@
 ---
 name: open-orchestrator-cheap
-description: "Open-models orchestrator, ultra-cheap tier: GLM-5.2 as oracle (plans and validates with its own tools), MiMo V2.5 Pro as the orchestrator (coordinates, holds the plan, spawns workers), and mimo-v2.5/deepseek-v4-flash as the hands (bounded edits, explores, verifications). Routes each task to the cheapest model whose context window can hold it. The orchestrator writes almost no code; it delegates pre-digested slices. Optimizes for lowest cost per solved task."
+description: "Open-models orchestrator, ultra-cheap tier: GLM-5.2 as oracle (plans and validates with its own tools), MiMo V2.5 Pro as the orchestrator (coordinates, holds the plan, spawns workers), and mimo-v2.5/deepseek-v4-flash as the hands (bounded edits, explores, verifications). Routes each task to the cheapest model whose context window can hold it. The orchestrator never writes code; it delegates pre-digested slices to workers. Optimizes for lowest cost per solved task."
 ---
 
 # Open Orchestrator — Cheap Tier
@@ -40,28 +40,47 @@ Escalation hand: `cmd/deepseek/deepseek-v4-pro` — same price as the orchestrat
 frontier-level reasoning and a 1M window. Use for big non-splittable files or a slice
 that genuinely needs delegated judgment.
 
-The orchestrator writes almost no code. It does prep, then delegates narrow,
-pre-located slices.
+**Hard rule — the orchestrator does not write code.** It does prep (grep, read,
+measure, slice), then delegates narrow, pre-located slices. Every file edit goes
+through a worker, no exceptions:
 
-**Pre-flight measurement (mandatory before routing).** Size is a measurement,
-not a judgment — never pick by instinct:
+- **Never** edit or write a file from the orchestrator role — not even a "trivial"
+  one-liner. Trivial edits are exactly what `mimo-v2.5` is for.
+- If the task involves any code change and **zero workers have been spawned**, the
+  orchestration has already failed — stop, slice the work, spawn.
+- The urge to "just do it myself, it's faster" is the failure mode this skill
+  exists to prevent. Speed comes from parallel workers, not from the orchestrator
+  typing.
+- Self-check before ending any turn: *did I edit a file this turn?* If yes, that
+  edit was a violation — route the remaining work through workers and say so.
+
+**Pre-flight measurement (mandatory before routing).** Measure the **working set** —
+the exact files the worker will read, i.e. the list that goes in its brief — never a
+whole zone or directory. Measuring a zone is the classic way to overestimate by 10×
+and send everything to the big models:
 
 ```bash
-rg --files <zone> | wc -l                   # file count
-rg --files <zone> | xargs wc -l | tail -1   # total lines
-rg -l "<symbol>" | wc -l                    # fan-out
+wc -l <file1> <file2> ...     # lines of the actual working set (the brief's file list)
+rg -l "<symbol>" | wc -l      # fan-out — to decide how to split, not to size the task
 ```
 
-Rough budget: `lines × ~10 tokens/line` vs the model's window, target < 60%. Fits
-under ~240k → `mimo-v2.5`; bigger → split into N fitting slices (preferred) or route
-to `deepseek-v4-flash` (1M).
+Budget: `lines × ~10 tokens/line` + brief + expected output, vs the model's real
+window, target **< ~75%**. That is the only margin — do not stack extra safety
+factors on top of it. Fits in mimo's 400K → `mimo-v2.5`; bigger → split into N
+fitting slices or route to `deepseek-v4-flash` (1M, same price). Escalating to
+`deepseek-v4-pro` requires a stated one-line reason why the slice is not splittable.
+
+**When in doubt, go cheap.** A cheap-hand run that comes back `too_big` costs almost
+nothing; a `deepseek-v4-pro` run that wasn't needed costs 3× more. Route on
+evidence — a measurement or a returned `too_big` — never on instinct.
 
 **Return contract (the downstream tripwire).** Workers are briefed to stop and hand
 back instead of compacting silently: `out_of_scope` (needs files beyond the working
 set), `too_big` (a listed file is far larger than briefed), `mismatch` (editor: real
 code differs from the brief). On any of these, the orchestrator re-measures and
-re-routes — split or escalate. Never re-send the same oversized task to the same
-model.
+re-routes — **split first**; escalate only if the slice is genuinely not splittable.
+Never re-send the same oversized task to the same model. These returns are the
+escalation mechanism: cheap probes, which is why routing defaults cheap.
 
 ## Two modes + the tripwire
 
@@ -103,6 +122,13 @@ Cost discipline: **GLM-5.2 is 5–15× the price of everything else in this tier
 coherence, plan sanity, conflicts, and irreversibility. Feed it a tight brief and
 exact file paths so its own investigation stays short.
 
+**Oracle budget: one call per task by default** — the primary end-gate. A second
+call (plan sanity) is justified only when the plan is wide, risky, or was built
+without the user. Conflicts and irreversibility checks are folded into the next
+scheduled gate whenever possible — batch every pending question into one call
+rather than firing them one by one. Never call the oracle in a loop: if a gate
+answer raises a new question, it waits for the next gate.
+
 ## Model table
 
 Scores 1–5 (5 = best). Context is the hard constraint; the rest are preferences.
@@ -120,10 +146,10 @@ starting calibration — tune from real runs.
 ## Context budgeting (the routing constraint)
 
 Estimate the task's working set: files the worker must read + instructions +
-expected output. Route to a model whose **effective window (~95% of max)** holds it
-with headroom.
+expected output. Route to a model whose window holds it at **< ~75% utilization** —
+one margin, applied once (no "effective window" discount stacked on top).
 
-- Target **< 60%** window utilization per task. Above that, mid-task auto-compaction
+- Above that, mid-task auto-compaction
   kicks in — the worker loses state, re-reads, burns tokens and time. That's the
   failure mode: a 400K model handed a 500K task compacts repeatedly and gets slow
   and dumb.
@@ -145,7 +171,9 @@ with headroom.
    delegated judgment)? → `deepseek-v4-pro`. The escalation, not the default.
 
 Tie-break: **cheapest model that clears the context bar wins.** Climb the
-intelligence axis only when the task actually needs it.
+intelligence axis only when the task actually needs it. When the measurement is
+ambiguous, route cheap and let the return contract (`too_big`) trigger the
+escalation — a failed cheap probe costs less than a needless `deepseek-v4-pro` pass.
 
 ## Worker prompt (model-scoped)
 

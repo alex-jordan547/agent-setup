@@ -1,0 +1,4 @@
+interface:
+  display_name: "Code Structure"
+  short_description: "Separate action orchestration from reusable service mechanics."
+  default_prompt: "Use code-structure to decide whether repeated operational logic belongs in actions or a shared service layer."

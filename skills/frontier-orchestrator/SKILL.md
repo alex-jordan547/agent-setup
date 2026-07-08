@@ -1,6 +1,6 @@
 ---
 name: frontier-orchestrator
-description: "Frontier-models orchestrator mixing Claude and Codex (GPT) families: Claude Opus 4.8 as the orchestrator (coordinates, holds the plan, spawns workers), GPT-5.5 as the oracle (plans and validates with its own tools — cross-family so gates are never graded by the family that did the work), and Sonnet 5 / gpt-5.4 as skilled hands with Haiku 4.5 / gpt-5.4-mini / spark as cheap hands. Routes each task to the cheapest model whose context window can hold it. The orchestrator writes almost no code; it delegates pre-digested slices. Optimizes for best result on hard tasks."
+description: "Frontier-models orchestrator mixing Claude and Codex (GPT) families: Claude Opus 4.8 as the orchestrator (coordinates, holds the plan, spawns workers), GPT-5.5 as the oracle (plans and validates with its own tools — cross-family so gates are never graded by the family that did the work), and Sonnet 5 / gpt-5.4 as skilled hands with Haiku 4.5 / gpt-5.4-mini / spark as cheap hands. Routes each task to the cheapest model whose context window can hold it. The orchestrator never writes code; it delegates pre-digested slices to workers. Optimizes for best result on hard tasks."
 ---
 
 # Frontier Orchestrator — Claude × Codex
@@ -40,28 +40,48 @@ Supervision essentials:
 | **Orchestrator** | `claude-opus-4-8` | Holds the plan, coordinates, spawns and supervises workers, integrates. State-of-the-art long-horizon agentic execution and 1M window — **headroom**, not a warehouse; the plan pre-digests the work so it stays far from full. |
 | **Hands** | skilled: `claude-sonnet-5` / `gpt-5.4` · cheap: `claude-haiku-4-5` / `gpt-5.4-mini` / `gpt-5.3-codex-spark` | Bounded edits, explores, verifications. One precise task each, sized to fit its window in one pass. |
 
-The orchestrator writes almost no code. It does prep, then delegates narrow,
-pre-located slices.
+**Hard rule — the orchestrator does not write code.** It does prep (grep, read,
+measure, slice), then delegates narrow, pre-located slices. Every file edit goes
+through a worker, no exceptions:
 
-**Pre-flight measurement (mandatory before routing).** Size is a measurement,
-not a judgment — never pick by instinct:
+- **Never** edit or write a file from the orchestrator role — not even a "trivial"
+  one-liner. Trivial edits are exactly what the cheap hands (spark/haiku/mini) are for.
+- If the task involves any code change and **zero workers have been spawned**, the
+  orchestration has already failed — stop, slice the work, spawn.
+- The urge to "just do it myself, it's faster" is the failure mode this skill
+  exists to prevent. Speed comes from parallel workers, not from the orchestrator
+  typing.
+- Self-check before ending any turn: *did I edit a file this turn?* If yes, that
+  edit was a violation — route the remaining work through workers and say so.
+
+**Pre-flight measurement (mandatory before routing).** Measure the **working set** —
+the exact files the worker will read, i.e. the list that goes in its brief — never a
+whole zone or directory. Measuring a zone is the classic way to overestimate by 10×
+and send everything to the big models:
 
 ```bash
-rg --files <zone> | wc -l                   # file count
-rg --files <zone> | xargs wc -l | tail -1   # total lines
-rg -l "<symbol>" | wc -l                    # fan-out
+wc -l <file1> <file2> ...     # lines of the actual working set (the brief's file list)
+rg -l "<symbol>" | wc -l      # fan-out — to decide how to split, not to size the task
 ```
 
-Rough budget: `lines × ~10 tokens/line` vs the model's window, target < 60%. Fits
-under ~75k → spark; under ~120k → haiku; under ~160k → mini; bigger → split into
-N fitting slices (preferred) or route to a 1M-window skilled hand.
+Budget: `lines × ~10 tokens/line` + brief + expected output, vs the model's real
+window, target **< ~75%**. That is the only margin — do not stack extra safety
+factors on top of it. Fits in spark's 128k → spark; haiku's 200k → haiku; mini's
+272k → mini; bigger → split into N fitting slices. Routing to a skilled hand
+(Sonnet 5 / gpt-5.4) instead of splitting requires a stated one-line reason why the
+slice is not splittable.
+
+**When in doubt, go cheap.** A cheap-hand run that comes back `too_big` costs almost
+nothing; a skilled-hand run that wasn't needed costs a lot. Route on evidence — a
+measurement or a returned `too_big` — never on instinct.
 
 **Return contract (the downstream tripwire).** Workers are briefed to stop and hand
 back instead of compacting silently: `out_of_scope` (needs files beyond the working
 set), `too_big` (a listed file is far larger than briefed), `mismatch` (editor: real
 code differs from the brief). On any of these, the orchestrator re-measures and
-re-routes — split or escalate. Never re-send the same oversized task to the same
-model.
+re-routes — **split first**; escalate only if the slice is genuinely not splittable.
+Never re-send the same oversized task to the same model. These returns are the
+escalation mechanism: cheap probes, which is why routing defaults cheap.
 
 ## Two modes + the tripwire
 
@@ -105,6 +125,13 @@ slow. Don't gate every micro-step; reserve gates for coherence, plan sanity,
 conflicts, and irreversibility. Feed it a tight brief and exact file paths so its
 own investigation stays short.
 
+**Oracle budget: one call per task by default** — the primary end-gate. A second
+call (plan sanity) is justified only when the plan is wide, risky, or was built
+without the user. Conflicts and irreversibility checks are folded into the next
+scheduled gate whenever possible — batch every pending question into one call
+rather than firing them one by one. Never call the oracle in a loop: if a gate
+answer raises a new question, it waits for the next gate.
+
 ## Model table
 
 Scores 1–5 (5 = best). Context is the hard constraint; the rest are preferences.
@@ -128,10 +155,10 @@ before depending on it (carried over from codex-orchestrator).
 ## Context budgeting (the routing constraint)
 
 Estimate the task's working set: files the worker must read + instructions +
-expected output. Route to a model whose **effective window (~95% of max)** holds it
-with headroom.
+expected output. Route to a model whose window holds it at **< ~75% utilization** —
+one margin, applied once (no "effective window" discount stacked on top).
 
-- Target **< 60%** window utilization per task. Above that, mid-task auto-compaction
+- Above that, mid-task auto-compaction
   kicks in — the worker loses state, re-reads, burns tokens and time. That's the
   spark failure mode: a 128k model handed a 150k task compacts repeatedly and gets
   slow and dumb.
@@ -155,7 +182,10 @@ with headroom.
    or `gpt-5.4` when a Codex-side worker is preferable.
 
 Tie-break: **cheapest and fastest model that clears the context bar wins.** Climb
-the intelligence axis only when the task actually needs it. Within a tier, family
+the intelligence axis only when the task actually needs it. When the measurement is
+ambiguous, route cheap and let the return contract (`too_big`) trigger the
+escalation — a failed cheap probe costs less than a needless skilled-hand pass.
+Within a tier, family
 is a secondary criterion: prefer the family the host spawns natively (no bridge
 overhead), and prefer crossing families only where it buys something — the oracle
 gate.
