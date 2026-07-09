@@ -1,5 +1,5 @@
 <!-- Managed by agent-setup (scripts/sync.sh). Source of truth: repo root AGENTS.md.
-     Do not edit the synced copy (~/.codex/AGENTS.md) — the next sync overwrites it
+     Do not edit the synced copy (~/.agents/AGENTS.md) — the next sync overwrites it
      after backing up the old file to <path>.bak-<timestamp>. -->
 
 # Agent Guidelines

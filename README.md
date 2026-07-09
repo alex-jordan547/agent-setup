@@ -8,7 +8,8 @@ Créé après avoir perdu des skills lors d'un remplacement de distro WSL (2026-
 
 | Chemin | Rôle |
 |---|---|
-| `skills/` | toutes les skills (une par dossier, `SKILL.md` + assets) |
+| `skills/` | les skills actives (une par dossier, `SKILL.md` + assets) |
+| `archive/` | skills conservées mais non synchronisées (restaurer : `git mv archive/<nom> skills/` + sync) |
 | `agents/` | subagents Codex custom (`*.toml`, synced vers `~/.codex/agents`) |
 | `CLAUDE.md` | mémoire globale Claude Code (source de vérité, synced vers `~/.claude/CLAUDE.md`) |
 | `AGENTS.md` | mémoire globale des autres agents (synced vers `~/.agents/AGENTS.md`) |
@@ -65,5 +66,4 @@ Ne jamais éditer directement dans `~/.agents/skills`, `~/.claude/CLAUDE.md` ou 
 
 ## Notes
 
-- Les skills `gstack-*`/gstack sont aussi gérées par l'outil gstack ; si gstack les met à jour, réimporter ici (`rsync ~/.agents/skills/<name>/ skills/<name>/`) ou retirer du repo pour laisser gstack seul maître.
 - Les copies d'agent-guards (orchestrator, use-loop, self-test, …) sont des versions patchées (chemins de preuves `~/.codex/proofs/`, pas de chemins absolus de l'auteur).
