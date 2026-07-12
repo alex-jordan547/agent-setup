@@ -78,6 +78,55 @@ sync_skills() {
   fi
 }
 
+# sync_claude_skills <dest_dir> <agent_skills_dir> <skill...>
+# Claude reads its own skills directory, so expose every managed skill there as
+# a symlink to the already-synced cross-tool copy. Existing un-managed entries
+# are left alone.
+sync_claude_skills() {
+  local dest="$1" agent_skills="$2"; shift 2
+  local names=("$@") managed=()
+  echo "-> $dest"
+  run mkdir -p "$dest"
+
+  local name link target current
+  for name in "${names[@]}"; do
+    link="$dest/$name"
+    target="$agent_skills/$name"
+    if [ -L "$link" ]; then
+      current="$(readlink "$link")"
+      if [ "$(readlink -f "$link")" = "$(readlink -f "$target")" ]; then
+        managed+=("$name")
+      else
+        echo "  !! preserving existing link: $link -> $current" >&2
+      fi
+    elif [ -e "$link" ]; then
+      echo "  !! preserving existing entry: $link" >&2
+    else
+      run ln -s "$target" "$link"
+      managed+=("$name")
+    fi
+  done
+
+  local manifest="$dest/$MANIFEST_NAME"
+  if [ "$PRUNE" = 1 ] && [ -f "$manifest" ]; then
+    while IFS= read -r old; do
+      [ -n "$old" ] || continue
+      local still=0
+      for name in "${managed[@]}"; do [ "$name" = "$old" ] && still=1 && break; done
+      if [ "$still" = 0 ] && [ -L "$dest/$old" ]; then
+        echo "  prune: $old"
+        run rm -f "$dest/$old"
+      fi
+    done < "$manifest"
+  fi
+
+  if [ "$DRY_RUN" = 1 ]; then
+    echo "  [dry-run] write manifest $manifest"
+  else
+    printf '%s\n' "${managed[@]}" > "$manifest"
+  fi
+}
+
 # sync_agents <dest_dir>
 # Copies repo agents/*.toml (Codex custom subagents) into place. Manifest-based
 # prune like skills: only files this script installed are ever removed.
@@ -143,6 +192,7 @@ echo "agent-setup sync ($([ "$DRY_RUN" = 1 ] && echo dry-run || echo live), ${#A
 
 # All skills live in the cross-tool standard dir; non-Claude agents read them there.
 sync_skills "$HOME/.agents/skills" "${ALL_SKILLS[@]}"
+sync_claude_skills "$HOME/.claude/skills" "$HOME/.agents/skills" "${ALL_SKILLS[@]}"
 
 # Codex custom subagents: agents/*.toml -> ~/.codex/agents (personal/global scope).
 sync_agents "$HOME/.codex/agents"
@@ -155,6 +205,7 @@ if is_wsl; then
   WIN_HOME="/mnt/c/Users/$WINDOWS_USER"
   if [ -d "$WIN_HOME" ]; then
     sync_skills "$WIN_HOME/.agents/skills" "${ALL_SKILLS[@]}"
+    sync_claude_skills "$WIN_HOME/.claude/skills" "$WIN_HOME/.agents/skills" "${ALL_SKILLS[@]}"
     sync_agents "$WIN_HOME/.codex/agents"
     sync_memory "$REPO_ROOT/CLAUDE.md" "$WIN_HOME/.claude/CLAUDE.md"
     sync_memory "$REPO_ROOT/AGENTS.md" "$WIN_HOME/.agents/AGENTS.md"

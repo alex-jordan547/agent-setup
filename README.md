@@ -22,7 +22,8 @@ Créé après avoir perdu des skills lors d'un remplacement de distro WSL (2026-
 
 Skills :
 
-- `~/.agents/skills` : **toutes** les skills (répertoire standard cross-outils, lu par tous les agents non-Claude)
+- `~/.agents/skills` : **toutes** les skills (répertoire standard cross-outils)
+- `~/.claude/skills` : symlinks vers les skills gérées dans `~/.agents/skills`, pour Claude Code
 - `~/.codex/agents` : les subagents Codex (`agents/*.toml`)
 - Chaque destination reçoit un manifeste `.agent-setup-managed` : seules les entrées listées dedans peuvent être supprimées (prune). Les skills/agents installés par d'autres outils ne sont jamais touchés.
 
@@ -62,7 +63,7 @@ echo 'source ~/Documents/Developper/agent-setup/shell/env.sh' >> ~/.zshrc
 2. `./scripts/sync.sh`
 3. `git add -A && git commit && git push`
 
-Ne jamais éditer directement dans `~/.agents/skills`, `~/.claude/CLAUDE.md` ou `~/.agents/AGENTS.md` : le prochain sync écrase (rsync `--delete` / robocopy `/MIR` ; les fichiers mémoire sont sauvegardés avant écrasement).
+Ne jamais éditer directement dans les skills gérées sous `~/.agents/skills` ou `~/.claude/skills`, ni dans `~/.claude/CLAUDE.md` ou `~/.agents/AGENTS.md` : le prochain sync écrase les skills gérées (rsync `--delete` / robocopy `/MIR`) ; les fichiers mémoire sont sauvegardés avant écrasement.
 
 ## Notes
 

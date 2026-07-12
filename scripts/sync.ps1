@@ -53,6 +53,50 @@ function Sync-Skills([string]$Dest, [string[]]$Names) {
     }
 }
 
+function Sync-ClaudeSkills([string]$Dest, [string]$AgentSkills, [string[]]$Names) {
+    Write-Host "-> $Dest"
+    if (-not $DryRun) { New-Item -ItemType Directory -Force -Path $Dest | Out-Null }
+
+    $managed = @()
+    foreach ($name in $Names) {
+        $link = Join-Path $Dest $name
+        $target = Join-Path $AgentSkills $name
+        $existing = Get-Item -LiteralPath $link -Force -ErrorAction SilentlyContinue
+        if ($null -eq $existing) {
+            if ($DryRun) {
+                Write-Host "  [dry-run] link $link -> $target"
+            } else {
+                New-Item -ItemType SymbolicLink -Path $link -Target $target | Out-Null
+            }
+            $managed += $name
+        } elseif ($existing.LinkType -eq "SymbolicLink" -and $existing.Target -eq $target) {
+            $managed += $name
+        } else {
+            Write-Warning "preserving existing entry: $link"
+        }
+    }
+
+    $manifest = Join-Path $Dest $ManifestName
+    if (-not $NoPrune -and (Test-Path $manifest)) {
+        foreach ($old in Get-Content $manifest | Where-Object { $_ }) {
+            if ($managed -notcontains $old) {
+                $stale = Join-Path $Dest $old
+                $existing = Get-Item -LiteralPath $stale -Force -ErrorAction SilentlyContinue
+                if ($null -ne $existing -and $existing.LinkType -eq "SymbolicLink") {
+                    Write-Host "  prune: $old"
+                    if (-not $DryRun) { Remove-Item -Force -LiteralPath $stale }
+                }
+            }
+        }
+    }
+
+    if ($DryRun) {
+        Write-Host "  [dry-run] write manifest $manifest"
+    } else {
+        $managed | Set-Content $manifest
+    }
+}
+
 function Sync-Agents([string]$Dest) {
     $srcDir = Join-Path $RepoRoot "agents"
     if (-not (Test-Path $srcDir)) { return }
@@ -103,6 +147,7 @@ Write-Host "agent-setup sync ($mode, $($AllSkills.Count) skills)"
 
 # All skills live in the cross-tool standard dir; non-Claude agents read them there.
 Sync-Skills (Join-Path $env:USERPROFILE ".agents\skills") $AllSkills
+Sync-ClaudeSkills (Join-Path $env:USERPROFILE ".claude\skills") (Join-Path $env:USERPROFILE ".agents\skills") $AllSkills
 
 # Codex custom subagents: agents/*.toml -> %USERPROFILE%\.codex\agents (personal scope).
 Sync-Agents (Join-Path $env:USERPROFILE ".codex\agents")
