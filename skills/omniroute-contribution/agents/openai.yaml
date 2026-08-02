@@ -1,0 +1,4 @@
+interface:
+  display_name: "OmniRoute Contribution"
+  short_description: "Préflight bloquant pour les PR OmniRoute"
+  default_prompt: "Use $omniroute-contribution to prepare and publish this OmniRoute contribution safely."
