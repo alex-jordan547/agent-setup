@@ -10,6 +10,8 @@ Two-axis review of the diff between `HEAD` and a fixed point the user supplies:
 
 Both axes run as **parallel sub-agents** so they don't pollute each other's context, then this skill aggregates their findings.
 
+**Codex execution:** spawn both axes as parallel read-only scout agents (see the codex-orchestrator skill). Give each the same briefs defined in step 4 below.
+
 The issue tracker should have been provided to you — run `/setup-matt-pocock-skills` if `docs/agents/issue-tracker.md` is missing.
 
 ## Process
@@ -58,6 +60,8 @@ Each smell reads *what it is* → *how to fix*; match it against the diff:
 ### 4. Spawn both sub-agents in parallel
 
 Send a single message with two `Agent` tool calls. Use the `general-purpose` subagent for both.
+
+On Codex: send a single message spawning two scout agents instead of using the Claude Agent tool.
 
 **Standards sub-agent prompt** — include:
 

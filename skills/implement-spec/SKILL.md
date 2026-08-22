@@ -14,6 +14,8 @@ Communication to and from subagents should be sparse. Communicate primarily thro
 
 **Implementer subagents** should be run in the background where possible for **maximum concurrency**.
 
+On Codex: run implementers and mergers as native workers (each in its own worktree), exploration as a read-only scout, and small pre-designed edits as editor-fast. Route via the codex-orchestrator skill.
+
 ## Steps
 
 1. Read the spec and tickets. Read enough to understand the task graph.

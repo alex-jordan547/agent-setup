@@ -54,6 +54,8 @@ Audit against the eight categories in [AUDIT.md](AUDIT.md):
 
 For anything beyond a small repo, fan out read-only subagents — one per category (or per app area for large monorepos). Each subagent prompt must include: the absolute path to AUDIT.md and its section heading, the recon facts (stack, motion libraries, token conventions, frequency map), an instruction to return findings only (file:line + evidence, no fixes), and Hard Rule 4 verbatim.
 
+On Codex: use parallel scout agents for the read-only fan-out, and an editor-fast agent (or native worker) as the executor in an isolated worktree. See the codex-orchestrator skill.
+
 Depth follows effort level (default `standard`):
 
 | Effort | Coverage | Subagents | Findings |
