@@ -1,10 +1,5 @@
-# Refactor Candidates
+# Refactor after the behavior works
 
-After TDD cycle, look for:
+Use the passing test to protect a concrete simplification revealed by the change: repeated logic with the same contract, unnecessary indirection, or an interface that makes the tested behavior difficult to express.
 
-- **Duplication** → Extract function/class
-- **Long methods** → Break into private helpers (keep tests on public interface)
-- **Shallow modules** → Combine or deepen
-- **Feature envy** → Move logic to where data lives
-- **Primitive obsession** → Introduce value objects
-- **Existing code** the new code reveals as problematic
+Choose the smallest change that addresses that friction, then rerun the tests. A long function, primitive type or unfamiliar pattern alone is not a reason to add abstractions. Preserve unrelated code and do not expand the task into an architecture audit.

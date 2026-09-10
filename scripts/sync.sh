@@ -3,14 +3,14 @@
 #
 # Destinations:
 #   - <home>/.agents/skills          : all skills (cross-tool standard dir)
-#   - <home>/.codex/skills           : only $CODEX_SKILLS from config.env
-#   - under WSL, the same two dirs on the Windows side (/mnt/c/Users/$WINDOWS_USER)
+#   - <home>/.claude/skills          : links to the cross-tool copies
+#   - under WSL, the same dirs on the Windows side (/mnt/c/Users/$WINDOWS_USER)
 #
 # A manifest file (.agent-setup-managed) is written per destination. Only
 # entries listed there are ever pruned, so skills installed by other tools
 # (gstack, npx skills, ...) are never touched.
 #
-# Usage: sync.sh [--dry-run] [--no-prune]
+# Usage: sync.sh [--dry-run] [--no-prune | --clean]
 
 set -euo pipefail
 
@@ -24,13 +24,20 @@ source "$REPO_ROOT/config.env"
 
 DRY_RUN=0
 PRUNE=1
+CLEAN=0
 for arg in "$@"; do
   case "$arg" in
     --dry-run) DRY_RUN=1 ;;
     --no-prune) PRUNE=0 ;;
+    --clean) CLEAN=1 ;;
     *) echo "Unknown flag: $arg" >&2; exit 1 ;;
   esac
 done
+
+if [ "$CLEAN" = 1 ] && [ "$PRUNE" = 0 ]; then
+  echo "--clean and --no-prune cannot be combined" >&2
+  exit 1
+fi
 
 run() {
   if [ "$DRY_RUN" = 1 ]; then
@@ -43,6 +50,57 @@ run() {
 is_wsl() {
   [ "$(uname -s)" = "Linux" ] && grep -qi microsoft /proc/version 2>/dev/null
 }
+
+# Remove only manifest-managed skills, including broken symlinks.
+clean_skills() {
+  local dest="$1" manifest="$1/$MANIFEST_NAME" name entry
+  [ -d "$dest" ] || return 0
+  echo "-> clean $dest"
+  for entry in "$dest"/* "$dest"/.[!.]* "$dest"/..?*; do
+    [ -e "$entry" ] || [ -L "$entry" ] || continue
+    name="$(basename "$entry")"
+    [ "$name" != "$MANIFEST_NAME" ] || continue
+    if [ ! -f "$manifest" ] || ! grep -Fxq -e "$name" -e "$name"$'\r' "$manifest"; then
+      echo "  keep (not managed by this repo): $entry"
+    fi
+  done
+  [ -f "$manifest" ] || return 0
+  [ ! -L "$dest" ] || { echo "Refusing linked skills directory: $dest" >&2; return 1; }
+  # Validate the whole manifest before deleting anything in this destination.
+  while IFS= read -r name || [ -n "$name" ]; do
+    name="${name%$'\r'}"
+    case "$name" in
+      .*|*/*|*\\*|*:*) echo "Invalid skill name in $manifest: $name" >&2; return 1 ;;
+    esac
+  done < "$manifest"
+  while IFS= read -r name || [ -n "$name" ]; do
+    name="${name%$'\r'}"
+    [ -n "$name" ] || continue
+    run rm -rf -- "$dest/$name"
+  done < "$manifest"
+  run rm -f -- "$manifest"
+}
+
+if [ "$CLEAN" = 1 ]; then
+  CLEAN_HOMES=("$HOME")
+  if is_wsl; then
+    WIN_HOME="/mnt/c/Users/$WINDOWS_USER"
+    if [ -d "$WIN_HOME" ]; then
+      CLEAN_HOMES+=("$WIN_HOME")
+    else
+      echo "!! WSL detected but $WIN_HOME not found — check WINDOWS_USER in config.env" >&2
+    fi
+  fi
+  echo "agent-setup clean ($([ "$DRY_RUN" = 1 ] && echo dry-run || echo live))"
+  for clean_home in "${CLEAN_HOMES[@]}"; do
+    # Include legacy installs and other agents; only manifests authorize removal.
+    for clean_dest in "$clean_home"/.*/skills "$clean_home"/.config/*/skills; do
+      clean_skills "$clean_dest"
+    done
+  done
+  echo "Done."
+  exit 0
+fi
 
 # sync_skills <dest_dir> <skill...>
 sync_skills() {

@@ -1,8 +1,16 @@
 # Animation Recipes
 
-Ready-to-build implementations for the cases that come up most. Start from the recipe, then adapt — don't rebuild from scratch.
+Illustrative patterns to adapt to the installed components and target browsers. Load only the matching section. Values are starting points, not fixed budgets or proof of performance; reuse the project's existing tokens first.
 
-Curves are the `--ease-out`, `--ease-in-out`, and `--ease-drawer` tokens defined in SKILL.md.
+Optional easing values used below:
+
+```css
+--ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+--ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+--ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+```
+
+The snippets show motion only. Preserve the component's focus, keyboard and screen-reader behavior and add reduced-motion handling, including an instant state change when appropriate.
 
 ---
 
@@ -222,7 +230,7 @@ For destructive actions where a plain click is too easy to fire by accident.
 
 Timing individual color transitions across a tab list never quite lands. Clip instead.
 
-Duplicate the tab list. Style the copy as the active state — different background, different text color. Clip the copy so only the active tab shows, and animate the clip on change:
+Use a decorative copy of the tab list, hidden from assistive technology and excluded from focus order. Keep one semantic set of controls. Style the copy as the active state, clip it so only the active tab shows, and animate the clip on change:
 
 ```css
 .tabs-active-copy {
@@ -321,4 +329,4 @@ element.animate(
 );
 ```
 
-Hardware-accelerated, interruptible, no bundle cost.
+Check rendering cost and interruption in the target browser; using WAAPI alone does not guarantee compositor acceleration.

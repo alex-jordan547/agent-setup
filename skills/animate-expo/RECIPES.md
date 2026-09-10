@@ -1,6 +1,6 @@
 # Expo Animation Recipes
 
-Ready-to-build implementations for the cases that come up most in a React Native app. Start from the recipe, then adapt.
+Illustrative examples written for Reanimated 4 and the Gesture Handler builder API. Verify support against the installed SDK and package versions before adapting a matching section. These are motion snippets, not complete accessible components or measured performance claims. Preserve reduced motion, cancellation and the component's accessibility behavior.
 
 ---
 
@@ -10,7 +10,7 @@ Ready-to-build implementations for the cases that come up most in a React Native
 npx expo install react-native-reanimated react-native-worklets react-native-gesture-handler expo-haptics
 ```
 
-(`react-native-keyboard-controller` only for the keyboard recipe.) `expo install`, not `npm install` — it resolves the versions that match the SDK. The worklets Babel plugin is configured by `babel-preset-expo` automatically.
+Install only the packages needed by the selected interaction (`react-native-keyboard-controller` only for its recipe). Use Expo's version-aware installer and check the installed SDK's setup instructions before changing Babel or architecture configuration.
 
 `GestureHandlerRootView` wraps the app once — in Expo Router, the root `_layout`:
 
@@ -50,7 +50,7 @@ Three conventions, explained once here instead of in every recipe:
 - **`scheduleOnRN(fn, ...args)` replaces the deprecated `runOnJS(fn)(...args)`** for calling back to the React Native runtime from a worklet.
 - **Gestures are wrapped in `useMemo`.** Rebuilding a gesture on every render can reattach the recognizer and drop a drag that's mid-flight.
 
-**Gesture Handler v3:** Expo installs v2, and the recipes use its `Gesture.Pan()` builder. If the project is already on v3, the builder is legacy — each gesture is a hook taking one config object, with `onStart` → `onActivate`, `onEnd` → `onDeactivate`, and the `success` flag replaced by `event.canceled` (inverted). The hook manages its own identity, so drop the `useMemo`:
+For a project using a different Gesture Handler API, follow its installed version's migration guide rather than translating callback names mechanically. A hook-style gesture can have a different lifecycle and cancellation contract. The following shape is illustrative and must be checked against that API:
 
 ```jsx
 const pan = usePanGesture({
@@ -86,7 +86,7 @@ function rubberband(overshoot, dimension, constant = 0.55) {
 
 ## Press feedback
 
-Every pressable in the app. This passes the frequency gate only because it's near-imperceptible: 120ms and a 3% scale is the ceiling for something touched this often — anything longer or larger belongs to rarer moments, per step 1 in SKILL.md. No gesture, no shared value — a CSS transition is the whole implementation.
+For a pressable that needs extra feedback, 120ms and a 3% scale are starting values to tune. Reuse native or existing feedback when sufficient. This example uses a state transition instead of per-frame React updates.
 
 ```jsx
 import Animated from 'react-native-reanimated';

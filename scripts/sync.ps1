@@ -4,17 +4,81 @@
 # and %USERPROFILE%\.agents\AGENTS.md, backing up the old file before overwrite.
 # Manifest-based prune: only entries this script installed are ever removed.
 #
-# Usage: powershell -ExecutionPolicy Bypass -File scripts\sync.ps1 [-DryRun] [-NoPrune]
+# Usage: powershell -ExecutionPolicy Bypass -File scripts\sync.ps1 [-DryRun] [-NoPrune | -Clean]
 
 param(
     [switch]$DryRun,
-    [switch]$NoPrune
+    [switch]$NoPrune,
+    [switch]$Clean
 )
 
 $ErrorActionPreference = "Stop"
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 $SkillsDir = Join-Path $RepoRoot "skills"
 $ManifestName = ".agent-setup-managed"
+
+if ($Clean -and $NoPrune) { throw "-Clean and -NoPrune cannot be combined" }
+
+function Clear-ManagedSkills([string]$Dest) {
+    $manifest = Join-Path $Dest $ManifestName
+    $names = @()
+    if (Test-Path -LiteralPath $manifest -PathType Leaf) {
+        $names = @(Get-Content -LiteralPath $manifest | Where-Object { $_ })
+    }
+    Write-Host "-> clean $Dest"
+    foreach ($entry in Get-ChildItem -LiteralPath $Dest -Force) {
+        if ($entry.Name -ne $ManifestName -and $names -cnotcontains $entry.Name) {
+            Write-Host "  keep (not managed by this repo): $($entry.FullName)"
+        }
+    }
+    if (-not (Test-Path -LiteralPath $manifest -PathType Leaf)) { return }
+    if ((Get-Item -LiteralPath $Dest -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) {
+        throw "Refusing linked skills directory: $Dest"
+    }
+    foreach ($name in $names) {
+        if ($name.StartsWith(".") -or $name.IndexOfAny([char[]]'/\:') -ge 0) {
+            throw "Invalid skill name in ${manifest}: $name"
+        }
+    }
+    foreach ($name in $names) {
+        $path = Join-Path $Dest $name
+        if ($DryRun) {
+            Write-Host "  [dry-run] remove $path"
+        } else {
+            $entry = Get-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
+            if ($null -ne $entry) {
+                if ($entry.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+                    Remove-Item -LiteralPath $path -Force
+                } else {
+                    Remove-Item -LiteralPath $path -Recurse -Force
+                }
+            }
+        }
+    }
+    if ($DryRun) {
+        Write-Host "  [dry-run] remove $manifest"
+    } else {
+        Remove-Item -LiteralPath $manifest -Force
+    }
+}
+
+if ($Clean) {
+    $mode = if ($DryRun) { "dry-run" } else { "live" }
+    Write-Host "agent-setup clean ($mode)"
+    # Discover global agent folders, including legacy installs and XDG layouts.
+    $roots = @(Get-ChildItem -LiteralPath $env:USERPROFILE -Directory -Force |
+        Where-Object { $_.Name.StartsWith(".") })
+    $configDir = Join-Path $env:USERPROFILE ".config"
+    if (Test-Path -LiteralPath $configDir -PathType Container) {
+        $roots += @(Get-ChildItem -LiteralPath $configDir -Directory -Force)
+    }
+    foreach ($root in $roots) {
+        $dest = Join-Path $root.FullName "skills"
+        if (Test-Path -LiteralPath $dest -PathType Container) { Clear-ManagedSkills $dest }
+    }
+    Write-Host "Done."
+    exit 0
+}
 
 $AllSkills = Get-ChildItem -Path $SkillsDir -Directory | Select-Object -ExpandProperty Name | Sort-Object
 
