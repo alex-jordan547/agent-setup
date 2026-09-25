@@ -63,3 +63,10 @@ For multi-step tasks, state a brief plan:
 ```
 
 Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
+
+## 5. Subagent Models
+
+**Don't let read-only subagents inherit the main model.**
+
+- Searching, reading logs, locating code, running tests → pass `model: "sonnet"` (or `"haiku"` for plain lookups).
+- Writing or editing code → keep the main model (omit `model`).
