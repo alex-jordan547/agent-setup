@@ -20,15 +20,16 @@ Créé après avoir perdu des skills lors d'un remplacement de distro WSL (2026-
 
 ## Catalogue
 
-Le catalogue contient **16 skills**. Six sont conservées telles quelles :
-`chrome-cdp`, `grilling`, `handoff`, `install-anti-slop`,
-`omniroute-contribution`, `prototype`.
+Le catalogue contient **22 skills**. Douze sont conservées telles quelles :
+`before-and-after`, `chrome-cdp`, `code-structure`, `eli5`,
+`evidence-driven-testing`, `grilling`, `handoff`, `install-anti-slop`,
+`new-feature`, `omniroute-contribution`, `prototype`, `unslop`.
 
-Dix ont été raccourcies : `animate`, `animate-expo`, `code-review`,
+Les dix autres ont été raccourcies : `animate`, `animate-expo`, `code-review`,
 `codex-orchestrator`, `diagnosing-bugs`, `no-ai-slop`, `tdd`, `to-spec`,
 `to-tickets`, `triage`.
 
-Les 30 autres entrées et leurs ressources originales sont conservées dans
+Les 29 autres entrées et leurs ressources originales sont conservées dans
 `archive/2026-09-10/`. Elles ne sont plus synchronisées. Les recettes de motion
 restent dans `animate` et `animate-expo` ; le vocabulaire, les détails de gestes
 et les critères de revue sont accessibles à la demande depuis leurs fichiers
