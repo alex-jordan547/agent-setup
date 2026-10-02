@@ -20,8 +20,8 @@ Créé après avoir perdu des skills lors d'un remplacement de distro WSL (2026-
 
 ## Catalogue
 
-Le catalogue contient **22 skills**. Douze sont conservées telles quelles :
-`before-and-after`, `chrome-cdp`, `code-structure`, `eli5`,
+Le catalogue contient **23 skills**. Treize sont conservées telles quelles :
+`before-and-after`, `chrome-cdp`, `code-structure`, `codebase-design`, `eli5`,
 `evidence-driven-testing`, `grilling`, `handoff`, `install-anti-slop`,
 `new-feature`, `omniroute-contribution`, `prototype`, `unslop`.
 
