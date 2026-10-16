@@ -20,14 +20,22 @@ Créé après avoir perdu des skills lors d'un remplacement de distro WSL (2026-
 
 ## Catalogue
 
-Le catalogue contient **23 skills**. Treize sont conservées telles quelles :
+Le catalogue contient **37 skills**. Treize sont conservées telles quelles :
 `before-and-after`, `chrome-cdp`, `code-structure`, `codebase-design`, `eli5`,
 `evidence-driven-testing`, `grilling`, `handoff`, `install-anti-slop`,
 `new-feature`, `omniroute-contribution`, `prototype`, `unslop`.
 
-Les dix autres ont été raccourcies : `animate`, `animate-expo`, `code-review`,
+Dix ont été raccourcies : `animate`, `animate-expo`, `code-review`,
 `codex-orchestrator`, `diagnosing-bugs`, `no-ai-slop`, `tdd`, `to-spec`,
 `to-tickets`, `triage`.
+
+Les quatorze du paquet `Leonxlnx/taste-skill` sont importées telles quelles
+(`npx skills add Leonxlnx/taste-skill`) : `brandkit`, `design-taste-frontend`,
+`design-taste-frontend-v1`, `design-taste-frontend-v2-experimental`,
+`full-output-enforcement`, `gpt-taste`, `high-end-visual-design`,
+`image-to-code`, `imagegen-frontend-mobile`, `imagegen-frontend-web`,
+`industrial-brutalist-ui`, `minimalist-ui`, `redesign-existing-projects`,
+`stitch-design-taste`.
 
 Les 29 autres entrées et leurs ressources originales sont conservées dans
 `archive/2026-09-10/`. Elles ne sont plus synchronisées. Les recettes de motion
