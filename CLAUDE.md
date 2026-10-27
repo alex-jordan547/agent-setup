@@ -70,3 +70,10 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 - Searching, reading logs, locating code, running tests → pass `model: "sonnet"` (or `"haiku"` for plain lookups).
 - Writing or editing code → keep the main model (omit `model`).
+
+## Browser
+
+- Default: drive the user's Dia browser over CDP with the `chrome-cdp` skill. This rule is standing approval for that skill. Always set `CDP_PORT_FILE="$HOME/Library/Application Support/Dia/User Data/DevToolsActivePort"`.
+- Dia is launched through `~/Applications/Dia (CDP).app`, which starts it with `--remote-debugging-port=9222` (no approval popup) and refreshes that port file.
+- Check first with `curl -s http://127.0.0.1:9222/json/version`. If Dia is not reachable, tell the user (relaunching via `Dia (CDP)` fixes it) and fall back to Aside: read the `aside-browser` skill and run `aside guide` before use.
+- Do not use the integrated T3 browser or another browser unless the user explicitly asks.
